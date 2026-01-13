@@ -1,0 +1,22 @@
+{
+  "name": "parcelbox-deskapp-electron",
+  "version": "1.0.0",
+  "description": "Desktop Application for the the parcelbox of easy2drop.",
+  "main": "main.js",
+  "scripts": {
+    "test": "echo \\\"Error: no test specified\\\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JaroPeeters/parcelbox-deskapp-electron.git"
+  },
+  "author": "C1",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/JaroPeeters/parcelbox-deskapp-electron/issues"
+  },
+  "homepage": "https://github.com/JaroPeeters/parcelbox-deskapp-electron#readme",
+  "devDependencies": {
+    "electron": "^39.2.7"
+  }
+}
