@@ -1,27 +1,20 @@
-﻿<!DOCTYPE html>
-<html>
+<!DOCTYPE html>
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <!-- https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'"
+      content="default-src 'self'; script-src 'self'; img-src 'self' blob: data:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'"
     />
-    <meta
-      http-equiv="X-Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'"
-    />
-    <title>Hello from Electron renderer!</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Parcelbox</title>
+    <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <h1>Hello from Electron renderer!</h1>
-    <script>
-      if (window.parcelbox && window.parcelbox.onUpdateDownloaded) {
-        window.parcelbox.onUpdateDownloaded(() => {
-          window.location.href = 'index.html'
-        })
-      }
-    </script>
+    <main class="app">
+      <section id="app-root" class="app__content" aria-live="polite"></section>
+    </main>
+    <script src="data.js"></script>
+    <script src="app.js"></script>
   </body>
 </html>
-
