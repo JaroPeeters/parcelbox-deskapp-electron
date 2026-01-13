@@ -1,7 +1,5 @@
 const path = require('node:path')
 const { app, BrowserWindow, shell } = require('electron/main')
-const { autoUpdater } = require('electron-updater')
-
 const UPDATE_URL = process.env.UPDATE_URL
 const UPDATE_CHECK_INTERVAL_MS = 30 * 60 * 1000
 
@@ -14,6 +12,14 @@ const sendToAll = (channel, payload) => {
 const setupAutoUpdates = () => {
   const shouldAutoUpdate = process.env.NODE_ENV === 'production' && app.isPackaged && UPDATE_URL
   if (!shouldAutoUpdate) {
+    return
+  }
+
+  let autoUpdater
+  try {
+    ;({ autoUpdater } = require('electron-updater'))
+  } catch (error) {
+    console.warn('Auto updates disabled: electron-updater is not installed.', error)
     return
   }
 
