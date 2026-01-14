@@ -1,4 +1,9 @@
 window.PARCELBOX_DATA = {
+  validQrCodes: [
+    "PBX-TEST-0001",
+    "PBX-TEST-0002",
+    "PBX-TEST-0003"
+  ],
   residents: [
     { id: "r1", name: "Ava Martin", apartment: "1A" },
     { id: "r2", name: "Noah King", apartment: "1B" },

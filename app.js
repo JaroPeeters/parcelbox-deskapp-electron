@@ -7,14 +7,18 @@ const state = {
   selectedResident: null,
   page: 1,
   selectedSize: null,
+  deliveryNote: "",
   autoReturnTimer: null,
-  inactivityTimer: null
+  inactivityTimer: null,
+  cameraStream: null,
+  scanAnimation: null
 }
 
 const routes = {
   home: renderHome,
   delivery: renderDelivery,
   deliverySize: renderDeliverySize,
+  deliveryNote: renderDeliveryNote,
   deliveryOpen: renderDeliveryOpen,
   deliverySuccess: renderDeliverySuccess,
   pickup: renderPickup,
@@ -31,12 +35,16 @@ function setStatus(message) {
 }
 
 function navigate(route, payload) {
+  stopCameraStream()
   state.route = route
   if (payload && payload.selectedResident) {
     state.selectedResident = payload.selectedResident
   }
   if (payload && payload.selectedSize) {
     state.selectedSize = payload.selectedSize
+  }
+  if (payload && typeof payload.deliveryNote === "string") {
+    state.deliveryNote = payload.deliveryNote
   }
   if (payload && typeof payload.page === "number") {
     state.page = payload.page
@@ -267,13 +275,70 @@ function renderDeliverySize() {
       <div class="size-tile__dims">${size.dims}</div>
     `
     button.addEventListener("click", () => {
-      navigate("deliveryOpen", { selectedSize: size })
+      navigate("deliveryNote", { selectedSize: size, deliveryNote: "" })
     })
     grid.appendChild(button)
   })
 
   section.appendChild(header)
   section.appendChild(grid)
+  appRoot.appendChild(section)
+}
+
+function renderDeliveryNote() {
+  if (!state.selectedResident || !state.selectedSize) {
+    navigate("delivery")
+    return
+  }
+
+  const section = document.createElement("section")
+  section.className = "section"
+
+  const header = document.createElement("div")
+  header.className = "section__header"
+  const title = document.createElement("h2")
+  title.textContent = "Add a delivery note"
+  header.appendChild(title)
+  renderHeaderActions(header)
+
+  const form = document.createElement("form")
+  form.className = "note-form"
+
+  const textarea = document.createElement("textarea")
+  textarea.className = "note-input"
+  textarea.placeholder = "Optional message for the resident"
+  textarea.value = state.deliveryNote
+  textarea.rows = 4
+  textarea.addEventListener("input", (event) => {
+    state.deliveryNote = event.target.value
+    resetInactivityTimer()
+  })
+
+  const actions = document.createElement("div")
+  actions.className = "note-actions"
+
+  const skip = createButton("Skip", () => {
+    navigate("deliveryOpen")
+  }, "btn btn--ghost")
+
+  const submit = createButton("", () => {
+    navigate("deliveryOpen")
+  }, "note-submit")
+  submit.setAttribute("aria-label", "Submit note")
+
+  actions.appendChild(skip)
+  actions.appendChild(submit)
+
+  form.addEventListener("submit", (event) => {
+    event.preventDefault()
+    navigate("deliveryOpen")
+  })
+
+  form.appendChild(textarea)
+  form.appendChild(actions)
+
+  section.appendChild(header)
+  section.appendChild(form)
   appRoot.appendChild(section)
 }
 
@@ -411,9 +476,18 @@ function renderPickupQr() {
   const camera = createCameraPanel()
   section.appendChild(header)
   section.appendChild(camera)
+  const scanNotice = createScanNotice()
+  section.appendChild(scanNotice)
   appRoot.appendChild(section)
 
-  startCamera(camera.querySelector("video"))
+  startQrScanner(camera.querySelector("video"), scanNotice, (data) => {
+    if (isValidQr(data)) {
+      navigate("pickupOpen")
+      return true
+    }
+    updateScanNotice(scanNotice, "Invalid QR code. Try again.")
+    return false
+  })
 }
 
 function renderPickupCode() {
@@ -507,9 +581,18 @@ function renderReservation() {
   const camera = createCameraPanel()
   section.appendChild(header)
   section.appendChild(camera)
+  const scanNotice = createScanNotice()
+  section.appendChild(scanNotice)
   appRoot.appendChild(section)
 
-  startCamera(camera.querySelector("video"))
+  startQrScanner(camera.querySelector("video"), scanNotice, (data) => {
+    if (isValidQr(data)) {
+      navigate("pickupOpen")
+      return true
+    }
+    updateScanNotice(scanNotice, "Invalid QR code. Try again.")
+    return false
+  })
 }
 
 function renderPickupOpen() {
@@ -588,12 +671,196 @@ async function startCamera(videoEl) {
   }
 
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true })
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
+      }
+    })
+    state.cameraStream = stream
     videoEl.srcObject = stream
+    await videoEl.play()
     const overlay = videoEl.parentElement.querySelector(".camera__overlay")
     if (overlay) overlay.textContent = ""
   } catch (error) {
     setStatus("Camera permission denied or unavailable.")
+  }
+}
+
+function stopCameraStream() {
+  if (state.scanAnimation) {
+    cancelAnimationFrame(state.scanAnimation)
+    state.scanAnimation = null
+  }
+  if (state.cameraStream) {
+    state.cameraStream.getTracks().forEach((track) => track.stop())
+    state.cameraStream = null
+  }
+}
+
+async function startQrScanner(videoEl, noticeEl, onResult) {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    updateScanNotice(noticeEl, "Camera not supported on this device.")
+    updateScanDebug(noticeEl, "Debug: mediaDevices unavailable")
+    return
+  }
+  if (!window.parcelbox || !window.parcelbox.decodeQr) {
+    updateScanNotice(noticeEl, "QR scanning not available.")
+    updateScanDebug(noticeEl, "Debug: decodeQr missing")
+    return
+  }
+
+  try {
+    updateScanNotice(noticeEl, "Starting camera...")
+    updateScanDebug(noticeEl, "Debug: requesting camera")
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: { ideal: "environment" },
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
+      }
+    })
+    state.cameraStream = stream
+    videoEl.srcObject = stream
+    await videoEl.play()
+    const overlay = videoEl.parentElement.querySelector(".camera__overlay")
+    if (overlay) overlay.textContent = ""
+    updateScanNotice(noticeEl, "Scanning for QR code...")
+    updateScanDebug(noticeEl, "Debug: camera started")
+
+    const canvas = document.createElement("canvas")
+    const ctx = canvas.getContext("2d", { willReadFrequently: true })
+    let lastStatus = 0
+    let lastDebug = 0
+
+    const decodeFrame = () => {
+      const vw = videoEl.videoWidth
+      const vh = videoEl.videoHeight
+      if (!vw || !vh) return null
+
+      const attempts = [
+        { sx: 0, sy: 0, sw: vw, sh: vh, dw: vw, dh: vh, mirror: false },
+        { sx: vw * 0.2, sy: vh * 0.2, sw: vw * 0.6, sh: vh * 0.6, dw: vw, dh: vh, mirror: false },
+        { sx: vw * 0.3, sy: vh * 0.3, sw: vw * 0.4, sh: vh * 0.4, dw: vw, dh: vh, mirror: false },
+        { sx: 0, sy: 0, sw: vw, sh: vh, dw: vw, dh: vh, mirror: true }
+      ]
+
+      for (const attempt of attempts) {
+        canvas.width = Math.round(attempt.dw)
+        canvas.height = Math.round(attempt.dh)
+        ctx.save()
+        if (attempt.mirror) {
+          ctx.translate(canvas.width, 0)
+          ctx.scale(-1, 1)
+        }
+        ctx.drawImage(
+          videoEl,
+          attempt.sx,
+          attempt.sy,
+          attempt.sw,
+          attempt.sh,
+          0,
+          0,
+          canvas.width,
+          canvas.height
+        )
+        ctx.restore()
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+        const code = window.parcelbox.decodeQr(
+          imageData.data,
+          imageData.width,
+          imageData.height,
+          { inversionAttempts: "attemptBoth" }
+        )
+        if (code && code.data) {
+          return code
+        }
+      }
+      return null
+    }
+
+    const scan = () => {
+      try {
+        if (videoEl.readyState === videoEl.HAVE_ENOUGH_DATA) {
+          const code = decodeFrame()
+          const nowDebug = Date.now()
+          if (nowDebug - lastDebug > 500) {
+            updateScanDebug(
+              noticeEl,
+              `Debug: ${canvas.width}x${canvas.height} (frames ok)`
+            )
+            lastDebug = nowDebug
+          }
+          if (code && code.data) {
+            const shouldStop = onResult(code.data)
+            if (shouldStop) {
+              stopCameraStream()
+              return
+            }
+            updateScanDebug(noticeEl, `Debug: decoded "${code.data}"`)
+          }
+          const now = Date.now()
+          if (now - lastStatus > 1000) {
+            updateScanNotice(noticeEl, "Scanning for QR code...")
+            lastStatus = now
+          }
+        } else {
+          const nowDebug = Date.now()
+          if (nowDebug - lastDebug > 500) {
+            updateScanDebug(noticeEl, "Debug: waiting for camera frames")
+            lastDebug = nowDebug
+          }
+        }
+      } catch (error) {
+        updateScanNotice(noticeEl, "Scanning error. Retrying...")
+        updateScanDebug(noticeEl, `Debug: ${error.message || error}`)
+      }
+      state.scanAnimation = requestAnimationFrame(scan)
+    }
+
+    state.scanAnimation = requestAnimationFrame(scan)
+  } catch (error) {
+    updateScanNotice(noticeEl, "Camera permission denied or unavailable.")
+    updateScanDebug(noticeEl, `Debug: ${error.message || error}`)
+  }
+}
+
+function isValidQr(data) {
+  const codes = window.PARCELBOX_DATA.validQrCodes || []
+  const value = String(data || "").trim()
+  return codes.includes(value)
+}
+
+function createScanNotice() {
+  const wrapper = document.createElement("div")
+  wrapper.className = "scan-notice"
+
+  const message = document.createElement("div")
+  message.className = "scan-notice__message"
+  message.textContent = "Align the QR code inside the frame."
+
+  const debug = document.createElement("div")
+  debug.className = "scan-notice__debug"
+  debug.textContent = "Debug: waiting for frames..."
+
+  wrapper.appendChild(message)
+  wrapper.appendChild(debug)
+  return wrapper
+}
+
+function updateScanNotice(el, message) {
+  if (!el) return
+  const messageEl = el.querySelector(".scan-notice__message")
+  if (messageEl) {
+    messageEl.textContent = message
+  }
+}
+
+function updateScanDebug(el, message) {
+  if (!el) return
+  const debugEl = el.querySelector(".scan-notice__debug")
+  if (debugEl) {
+    debugEl.textContent = message
   }
 }
 
