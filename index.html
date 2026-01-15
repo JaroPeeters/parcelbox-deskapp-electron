@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; img-src 'self' blob: data:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'"
+      content="default-src 'self'; script-src 'self'; connect-src 'self' http://localhost:3000; img-src 'self' blob: data:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Parcelbox</title>
@@ -12,6 +12,10 @@
   </head>
   <body>
     <main class="app">
+      <header class="app__header">
+        <div class="app__brand">Parcelbox</div>
+        <div id="app-status" class="app__status"></div>
+      </header>
       <section id="app-root" class="app__content" aria-live="polite"></section>
     </main>
     <script src="data.js"></script>

@@ -19,6 +19,32 @@ window.PARCELBOX_DATA = {
     { id: "r12", name: "Logan Perez", apartment: "6B" },
     { id: "r13", name: "Chloe Reed", apartment: "7A" },
     { id: "r14", name: "Jack Ward", apartment: "7B" },
-    { id: "r15", name: "Grace Young", apartment: "8A" }
+    { id: "r15", name: "Grace Young", apartment: "8A" },
+    { id: "r16", name: "Owen Martin", apartment: "1A" },
+    { id: "r17", name: "Lily Martin", apartment: "1A" },
+    { id: "r18", name: "Emma King", apartment: "1B" },
+    { id: "r19", name: "Mateo Lopez", apartment: "2A" },
+    { id: "r20", name: "Sofia Lopez", apartment: "2A" },
+    { id: "r21", name: "Amelia Clark", apartment: "2B" },
+    { id: "r22", name: "Evan Wright", apartment: "3A" },
+    { id: "r23", name: "Harper Walker", apartment: "3B" },
+    { id: "r24", name: "Eli Walker", apartment: "3B" },
+    { id: "r25", name: "Nora Scott", apartment: "4A" },
+    { id: "r26", name: "Henry Green", apartment: "4B" },
+    { id: "r27", name: "Zoey Green", apartment: "4B" },
+    { id: "r28", name: "Liam Adams", apartment: "5A" },
+    { id: "r29", name: "Avery Hill", apartment: "5B" },
+    { id: "r30", name: "Samuel Baker", apartment: "6A" },
+    { id: "r31", name: "Ruby Baker", apartment: "6A" },
+    { id: "r32", name: "Diego Perez", apartment: "6B" },
+    { id: "r33", name: "Mila Reed", apartment: "7A" },
+    { id: "r34", name: "Caleb Ward", apartment: "7B" },
+    { id: "r35", name: "Hannah Ward", apartment: "7B" },
+    { id: "r36", name: "Daniel Young", apartment: "8A" }
   ]
+}
+
+window.PARCELBOX_CONFIG = {
+  apiBaseUrl: "http://localhost:3000",
+  boxUuid: "2237269f-b8df-4652-8ad2-8de960ed6a45"
 }

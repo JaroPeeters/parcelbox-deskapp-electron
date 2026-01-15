@@ -11,7 +11,12 @@ const state = {
   autoReturnTimer: null,
   inactivityTimer: null,
   cameraStream: null,
-  scanAnimation: null
+  scanAnimation: null,
+  pickupFlow: "pickup",
+  residents: null,
+  residentsLoaded: false,
+  residentsLoading: false,
+  residentsError: null
 }
 
 const routes = {
@@ -26,7 +31,12 @@ const routes = {
   pickupCode: renderPickupCode,
   pickupOpen: renderPickupOpen,
   pickupSuccess: renderPickupSuccess,
-  reservation: renderReservation
+  reservation: renderReservation,
+  reservationQr: renderReservationQr,
+  reservationCode: renderReservationCode,
+  reservationSize: renderReservationSize,
+  reservationOpen: renderReservationOpen,
+  reservationSuccess: renderReservationSuccess
 }
 
 function setStatus(message) {
@@ -100,6 +110,65 @@ function renderHome() {
   appRoot.appendChild(wrapper)
 }
 
+function getApiConfig() {
+  const config = window.PARCELBOX_CONFIG || {}
+  const apiBaseUrl = config.apiBaseUrl || config.baseUrl
+  const boxUuid = config.boxUuid
+  if (!apiBaseUrl || !boxUuid) return null
+  return { apiBaseUrl, boxUuid }
+}
+
+function normalizeResidentsFromApi(payload) {
+  if (!Array.isArray(payload)) return []
+  const residents = []
+  payload.forEach((resident) => {
+    const apartmentNumber = resident.apartment && resident.apartment.number
+      ? resident.apartment.number
+      : ""
+    residents.push({
+      id: resident.uuid,
+      name: `${resident.firstName || ""} ${resident.lastName || ""}`.trim(),
+      apartment: apartmentNumber
+    })
+    if (Array.isArray(resident.familyMembers)) {
+      resident.familyMembers.forEach((member) => {
+        residents.push({
+          id: member.uuid,
+          name: `${member.firstName || ""} ${member.lastName || ""}`.trim(),
+          apartment: apartmentNumber
+        })
+      })
+    }
+  })
+  return residents
+}
+
+async function ensureResidentsLoaded() {
+  if (state.residentsLoading || state.residentsLoaded) return
+  const config = getApiConfig()
+  if (!config) return
+  state.residentsLoading = true
+  state.residentsError = null
+  try {
+    const url = `${config.apiBaseUrl}/api/v1/apartment?boxUuid=${encodeURIComponent(config.boxUuid)}`
+    const response = await fetch(url, { cache: "no-store" })
+    if (!response.ok) {
+      throw new Error(`Request failed (${response.status})`)
+    }
+    const payload = await response.json()
+    state.residents = normalizeResidentsFromApi(payload)
+    state.residentsLoaded = true
+  } catch (error) {
+    state.residentsError = error
+    state.residentsLoaded = true
+  } finally {
+    state.residentsLoading = false
+    if (state.route === "delivery") {
+      render()
+    }
+  }
+}
+
 function createImageTile(label, imagePath, onClick) {
   const button = document.createElement("button")
   button.type = "button"
@@ -121,6 +190,7 @@ function createImageTile(label, imagePath, onClick) {
 }
 
 function renderDelivery() {
+  ensureResidentsLoaded()
   setStatus("Select resident")
   const section = document.createElement("section")
   section.className = "section"
@@ -146,7 +216,8 @@ function renderDelivery() {
   const list = document.createElement("div")
   list.className = "grid grid--2 list"
 
-  const filteredResidents = window.PARCELBOX_DATA.residents
+  const residentsSource = state.residents || window.PARCELBOX_DATA.residents || []
+  const filteredResidents = residentsSource
     .filter((resident) => {
       const needle = state.query.trim().toLowerCase()
       if (!needle) return true
@@ -180,7 +251,20 @@ function renderDelivery() {
   if (residents.length === 0) {
     const empty = document.createElement("div")
     empty.className = "empty"
-    empty.textContent = "No residents found."
+    if (state.residentsLoading) {
+      empty.textContent = "Loading residents..."
+    } else if (state.residentsError) {
+      empty.textContent = "Unable to load residents."
+      const retry = createButton("Retry", () => {
+        state.residentsLoaded = false
+        state.residentsError = null
+        ensureResidentsLoaded()
+      }, "btn")
+      retry.style.marginTop = "12px"
+      empty.appendChild(retry)
+    } else {
+      empty.textContent = "No residents found."
+    }
     list.appendChild(empty)
   }
 
@@ -462,6 +546,7 @@ function createImageTileWithClass(label, imagePath, onClick, className) {
 }
 
 function renderPickupQr() {
+  state.pickupFlow = "pickup"
   setStatus("Scan QR code")
   const section = document.createElement("section")
   section.className = "section"
@@ -491,6 +576,7 @@ function renderPickupQr() {
 }
 
 function renderPickupCode() {
+  state.pickupFlow = "pickup"
   setStatus("Enter access code")
   const section = document.createElement("section")
   section.className = "section"
@@ -567,6 +653,44 @@ function renderPickupCode() {
 }
 
 function renderReservation() {
+  state.pickupFlow = "reservation"
+  setStatus("Choose reservation method")
+  const wrapper = document.createElement("section")
+  wrapper.className = "section"
+
+  const header = document.createElement("div")
+  header.className = "section__header"
+  const title = document.createElement("h2")
+  title.textContent = "Reservation"
+  header.appendChild(title)
+  renderHeaderActions(header)
+
+  const grid = document.createElement("div")
+  grid.className = "grid grid--2"
+  grid.appendChild(
+    createImageTileWithClass(
+      "QR",
+      "assets/qr.png",
+      () => navigate("reservationQr"),
+      "tile tile--image tile--primary"
+    )
+  )
+  grid.appendChild(
+    createImageTileWithClass(
+      "Code",
+      "assets/code.png",
+      () => navigate("reservationCode"),
+      "tile tile--image tile--primary"
+    )
+  )
+
+  wrapper.appendChild(header)
+  wrapper.appendChild(grid)
+  appRoot.appendChild(wrapper)
+}
+
+function renderReservationQr() {
+  state.pickupFlow = "reservation"
   setStatus("Scan reservation")
   const section = document.createElement("section")
   section.className = "section"
@@ -587,12 +711,165 @@ function renderReservation() {
 
   startQrScanner(camera.querySelector("video"), scanNotice, (data) => {
     if (isValidQr(data)) {
-      navigate("pickupOpen")
+      navigate("reservationSize")
       return true
     }
     updateScanNotice(scanNotice, "Invalid QR code. Try again.")
     return false
   })
+}
+
+function renderReservationCode() {
+  state.pickupFlow = "reservation"
+  setStatus("Enter reservation code")
+  const section = document.createElement("section")
+  section.className = "section"
+
+  const header = document.createElement("div")
+  header.className = "section__header"
+  const title = document.createElement("h2")
+  title.textContent = "Enter Code"
+  header.appendChild(title)
+  renderHeaderActions(header)
+
+  const form = document.createElement("form")
+  form.className = "code-form"
+
+  const input = document.createElement("input")
+  input.type = "text"
+  input.inputMode = "numeric"
+  input.maxLength = 5
+  input.placeholder = "5-digit code"
+  input.className = "code-input"
+  input.readOnly = true
+
+  form.addEventListener("submit", (event) => {
+    event.preventDefault()
+    if (input.value.trim().length !== 5) {
+      setStatus("Please enter a 5-digit code.")
+      return
+    }
+    navigate("reservationSize")
+  })
+
+  const keypad = document.createElement("div")
+  keypad.className = "keypad"
+
+  const keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9"]
+  keys.forEach((digit) => {
+    const key = createButton(digit, () => {
+      if (input.value.length < input.maxLength) {
+        input.value += digit
+        resetInactivityTimer()
+      }
+    }, "keypad__key")
+    keypad.appendChild(key)
+  })
+
+  const backspace = createButton("", () => {
+    input.value = input.value.slice(0, -1)
+    resetInactivityTimer()
+  }, "keypad__key keypad__key--icon keypad__key--muted")
+  backspace.setAttribute("aria-label", "Backspace")
+
+  const zero = createButton("0", () => {
+    if (input.value.length < input.maxLength) {
+      input.value += "0"
+      resetInactivityTimer()
+    }
+  }, "keypad__key")
+
+  const enter = createButton("", () => {
+    form.requestSubmit()
+  }, "keypad__key keypad__key--icon keypad__key--primary")
+  enter.setAttribute("aria-label", "Submit")
+
+  keypad.appendChild(backspace)
+  keypad.appendChild(zero)
+  keypad.appendChild(enter)
+
+  form.appendChild(input)
+  form.appendChild(keypad)
+
+  section.appendChild(header)
+  section.appendChild(form)
+  appRoot.appendChild(section)
+}
+
+function renderReservationSize() {
+  state.pickupFlow = "reservation"
+  setStatus("Select box size")
+  const section = document.createElement("section")
+  section.className = "section"
+
+  const header = document.createElement("div")
+  header.className = "section__header"
+  const title = document.createElement("h2")
+  title.textContent = "Select box size"
+  header.appendChild(title)
+  renderHeaderActions(header)
+
+  const grid = document.createElement("div")
+  grid.className = "size-grid"
+
+  const sizes = [
+    { label: "S", dims: "30 x 20 x 10 cm" },
+    { label: "M", dims: "40 x 30 x 20 cm" },
+    { label: "L", dims: "50 x 40 x 30 cm" },
+    { label: "XL", dims: "60 x 50 x 40 cm" },
+    { label: "XXL", dims: "74 x 45 x 42 cm" }
+  ]
+
+  sizes.forEach((size) => {
+    const button = document.createElement("button")
+    button.type = "button"
+    button.className = "tile tile--compact size-tile"
+    button.innerHTML = `
+      <div class="size-tile__label">${size.label}</div>
+      <div class="size-tile__dims">${size.dims}</div>
+    `
+    button.addEventListener("click", () => {
+      state.selectedSize = size
+      navigate("reservationOpen")
+    })
+    grid.appendChild(button)
+  })
+
+  section.appendChild(header)
+  section.appendChild(grid)
+  appRoot.appendChild(section)
+}
+
+function renderReservationOpen() {
+  state.pickupFlow = "reservation"
+  if (!state.selectedSize) {
+    navigate("reservationSize")
+    return
+  }
+  const section = document.createElement("section")
+  section.className = "section status-screen"
+
+  const title = document.createElement("div")
+  title.className = "status-screen__title"
+  title.textContent = "Box 39"
+
+  const image = document.createElement("img")
+  image.src = "assets/open-box.png"
+  image.alt = "Open box"
+  image.className = "status-screen__image"
+
+  section.appendChild(title)
+  section.appendChild(image)
+  appRoot.appendChild(section)
+
+  state.autoReturnTimer = setTimeout(() => {
+    navigate("reservationSuccess")
+  }, 3000)
+}
+
+function renderReservationSuccess() {
+  state.pickupFlow = "reservation"
+  renderPickupSuccess()
 }
 
 function renderPickupOpen() {
@@ -628,7 +905,9 @@ function renderPickupSuccess() {
 
   const title = document.createElement("div")
   title.className = "status-screen__title"
-  title.textContent = "Package pick up - successful"
+  title.textContent = state.pickupFlow === "reservation"
+    ? "Package successfully stored for pickup"
+    : "Package pick up - successful"
 
   const info = document.createElement("div")
   info.className = "status-screen__info"
