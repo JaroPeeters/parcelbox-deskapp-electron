@@ -155,6 +155,12 @@ function getApiConfig() {
   return { apiBaseUrl, boxUuid }
 }
 
+function getApiHeaders() {
+  return {
+    "ngrok-skip-browser-warning": "true"
+  }
+}
+
 function normalizeResidentsFromApi(payload) {
   if (!Array.isArray(payload)) return []
   const residents = []
@@ -219,7 +225,7 @@ async function submitDelivery() {
     const url = `${config.apiBaseUrl}/api/v1/apartment/deliveries`
     const response = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...getApiHeaders() },
       body: JSON.stringify(payload)
     })
     if (!response.ok) {
@@ -242,7 +248,7 @@ async function submitPickupCode(code) {
     const url = `${config.apiBaseUrl}/api/v1/apartment/deliveries/pickup`
     const response = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...getApiHeaders() },
       body: JSON.stringify({ code })
     })
     if (!response.ok) {
@@ -265,7 +271,7 @@ async function ensureResidentsLoaded() {
   state.residentsError = null
   try {
     const url = `${config.apiBaseUrl}/api/v1/apartment?boxUuid=${encodeURIComponent(config.boxUuid)}`
-    const response = await fetch(url, { cache: "no-store" })
+    const response = await fetch(url, { cache: "no-store", headers: getApiHeaders() })
     if (!response.ok) {
       throw new Error(`Request failed (${response.status})`)
     }
@@ -291,7 +297,7 @@ async function ensureSizesLoaded() {
   state.sizesError = null
   try {
     const url = `${config.apiBaseUrl}/api/v1/apartment/available-unit-sizes?boxUuid=${encodeURIComponent(config.boxUuid)}`
-    const response = await fetch(url, { cache: "no-store" })
+    const response = await fetch(url, { cache: "no-store", headers: getApiHeaders() })
     if (!response.ok) {
       throw new Error(`Request failed (${response.status})`)
     }
