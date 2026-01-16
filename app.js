@@ -16,7 +16,11 @@ const state = {
   residents: null,
   residentsLoaded: false,
   residentsLoading: false,
-  residentsError: null
+  residentsError: null,
+  availableSizes: null,
+  sizesLoaded: false,
+  sizesLoading: false,
+  sizesError: null
 }
 
 const routes = {
@@ -143,6 +147,13 @@ function normalizeResidentsFromApi(payload) {
   return residents
 }
 
+function normalizeSizesFromApi(payload) {
+  if (!Array.isArray(payload)) return []
+  const order = ["small", "medium", "large", "extra_large", "extra_extra_large"]
+  const allowed = new Set(payload.map((value) => String(value || "").toLowerCase()))
+  return order.filter((size) => allowed.has(size))
+}
+
 async function ensureResidentsLoaded() {
   if (state.residentsLoading || state.residentsLoaded) return
   const config = getApiConfig()
@@ -164,6 +175,32 @@ async function ensureResidentsLoaded() {
   } finally {
     state.residentsLoading = false
     if (state.route === "delivery") {
+      render()
+    }
+  }
+}
+
+async function ensureSizesLoaded() {
+  if (state.sizesLoading || state.sizesLoaded) return
+  const config = getApiConfig()
+  if (!config) return
+  state.sizesLoading = true
+  state.sizesError = null
+  try {
+    const url = `${config.apiBaseUrl}/api/v1/apartment/available-unit-sizes?boxUuid=${encodeURIComponent(config.boxUuid)}`
+    const response = await fetch(url, { cache: "no-store" })
+    if (!response.ok) {
+      throw new Error(`Request failed (${response.status})`)
+    }
+    const payload = await response.json()
+    state.availableSizes = normalizeSizesFromApi(payload)
+    state.sizesLoaded = true
+  } catch (error) {
+    state.sizesError = error
+    state.sizesLoaded = true
+  } finally {
+    state.sizesLoading = false
+    if (state.route === "deliverySize" || state.route === "reservationSize") {
       render()
     }
   }
@@ -327,6 +364,7 @@ function renderDeliverySize() {
     return
   }
 
+  ensureSizesLoaded()
   setStatus(`Package for ${state.selectedResident.name}`)
 
   const section = document.createElement("section")
@@ -342,13 +380,18 @@ function renderDeliverySize() {
   const grid = document.createElement("div")
   grid.className = "size-grid"
 
-  const sizes = [
-    { label: "S", dims: "30 × 20 × 10 cm" },
-    { label: "M", dims: "40 × 30 × 20 cm" },
-    { label: "L", dims: "50 × 40 × 30 cm" },
-    { label: "XL", dims: "60 × 50 × 40 cm" },
-    { label: "XXL", dims: "74 × 45 × 42 cm" }
-  ]
+  const sizesMap = {
+    small: { label: "S", dims: "30 x 20 x 10 cm" },
+    medium: { label: "M", dims: "40 x 30 x 20 cm" },
+    large: { label: "L", dims: "50 x 40 x 30 cm" },
+    extra_large: { label: "XL", dims: "60 x 50 x 40 cm" },
+    extra_extra_large: { label: "XXL", dims: "74 x 45 x 42 cm" }
+  }
+  const sizeOrder = ["small", "medium", "large", "extra_large", "extra_extra_large"]
+  const available = state.availableSizes && state.availableSizes.length > 0
+    ? state.availableSizes
+    : sizeOrder
+  const sizes = available.map((key) => sizesMap[key]).filter(Boolean)
 
   sizes.forEach((size) => {
     const button = document.createElement("button")
@@ -365,7 +408,26 @@ function renderDeliverySize() {
   })
 
   section.appendChild(header)
-  section.appendChild(grid)
+  if (state.sizesLoading) {
+    const notice = document.createElement("div")
+    notice.className = "empty"
+    notice.textContent = "Loading available sizes..."
+    section.appendChild(notice)
+  } else if (state.sizesError) {
+    const notice = document.createElement("div")
+    notice.className = "empty"
+    notice.textContent = "Unable to load available sizes."
+    const retry = createButton("Retry", () => {
+      state.sizesLoaded = false
+      state.sizesError = null
+      ensureSizesLoaded()
+    }, "btn")
+    retry.style.marginTop = "12px"
+    notice.appendChild(retry)
+    section.appendChild(notice)
+  } else {
+    section.appendChild(grid)
+  }
   appRoot.appendChild(section)
 }
 
@@ -798,6 +860,7 @@ function renderReservationCode() {
 
 function renderReservationSize() {
   state.pickupFlow = "reservation"
+  ensureSizesLoaded()
   setStatus("Select box size")
   const section = document.createElement("section")
   section.className = "section"
@@ -812,13 +875,18 @@ function renderReservationSize() {
   const grid = document.createElement("div")
   grid.className = "size-grid"
 
-  const sizes = [
-    { label: "S", dims: "30 x 20 x 10 cm" },
-    { label: "M", dims: "40 x 30 x 20 cm" },
-    { label: "L", dims: "50 x 40 x 30 cm" },
-    { label: "XL", dims: "60 x 50 x 40 cm" },
-    { label: "XXL", dims: "74 x 45 x 42 cm" }
-  ]
+  const sizesMap = {
+    small: { label: "S", dims: "30 x 20 x 10 cm" },
+    medium: { label: "M", dims: "40 x 30 x 20 cm" },
+    large: { label: "L", dims: "50 x 40 x 30 cm" },
+    extra_large: { label: "XL", dims: "60 x 50 x 40 cm" },
+    extra_extra_large: { label: "XXL", dims: "74 x 45 x 42 cm" }
+  }
+  const sizeOrder = ["small", "medium", "large", "extra_large", "extra_extra_large"]
+  const available = state.availableSizes && state.availableSizes.length > 0
+    ? state.availableSizes
+    : sizeOrder
+  const sizes = available.map((key) => sizesMap[key]).filter(Boolean)
 
   sizes.forEach((size) => {
     const button = document.createElement("button")
@@ -836,7 +904,26 @@ function renderReservationSize() {
   })
 
   section.appendChild(header)
-  section.appendChild(grid)
+  if (state.sizesLoading) {
+    const notice = document.createElement("div")
+    notice.className = "empty"
+    notice.textContent = "Loading available sizes..."
+    section.appendChild(notice)
+  } else if (state.sizesError) {
+    const notice = document.createElement("div")
+    notice.className = "empty"
+    notice.textContent = "Unable to load available sizes."
+    const retry = createButton("Retry", () => {
+      state.sizesLoaded = false
+      state.sizesError = null
+      ensureSizesLoaded()
+    }, "btn")
+    retry.style.marginTop = "12px"
+    notice.appendChild(retry)
+    section.appendChild(notice)
+  } else {
+    section.appendChild(grid)
+  }
   appRoot.appendChild(section)
 }
 
