@@ -45,6 +45,6 @@ window.PARCELBOX_DATA = {
 }
 
 window.PARCELBOX_CONFIG = {
-  apiBaseUrl: "http://localhost:3000",
+  apiBaseUrl: "https://josphine-interramal-saddenedly.ngrok-free.dev",
   boxUuid: "2237269f-b8df-4652-8ad2-8de960ed6a45"
 }

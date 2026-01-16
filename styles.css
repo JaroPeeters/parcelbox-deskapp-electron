@@ -436,6 +436,10 @@ body {
   box-shadow: 0 20px 40px rgba(18, 23, 52, 0.25);
 }
 
+.camera--error {
+  box-shadow: 0 0 0 4px #d64545, 0 20px 40px rgba(18, 23, 52, 0.25);
+}
+
 .camera video {
   width: 100%;
   height: 100%;

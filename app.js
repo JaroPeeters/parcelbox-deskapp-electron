@@ -232,6 +232,31 @@ async function submitDelivery() {
   }
 }
 
+async function submitPickupCode(code) {
+  const config = getApiConfig()
+  if (!config) {
+    setStatus("Pickup validation unavailable.")
+    return false
+  }
+  try {
+    const url = `${config.apiBaseUrl}/api/v1/apartment/deliveries/pickup`
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code })
+    })
+    if (!response.ok) {
+      throw new Error(`Request failed (${response.status})`)
+    }
+    const payload = await response.json()
+    const message = payload && payload.message ? String(payload.message).toLowerCase() : ""
+    return message === "successful"
+  } catch (error) {
+    setStatus("Unable to validate pickup code.")
+    return false
+  }
+}
+
 async function ensureResidentsLoaded() {
   if (state.residentsLoading || state.residentsLoaded) return
   const config = getApiConfig()
@@ -702,14 +727,34 @@ function renderPickupQr() {
   section.appendChild(scanNotice)
   appRoot.appendChild(section)
 
-  startQrScanner(camera.querySelector("video"), scanNotice, (data) => {
-    if (isValidQr(data)) {
-      navigate("pickupOpen")
-      return true
-    }
-    updateScanNotice(scanNotice, "Invalid QR code. Try again.")
-    return false
-  })
+  let validating = false
+  const setCameraError = (isError) => {
+    if (!camera) return
+    camera.classList.toggle("camera--error", isError)
+  }
+
+  const startPickupScan = () => {
+    startQrScanner(camera.querySelector("video"), scanNotice, (data) => {
+      if (validating) return false
+      validating = true
+      setCameraError(false)
+      updateScanNotice(scanNotice, "Validating code...")
+      updateScanDebug(scanNotice, `Debug: validating "${data}"`)
+      submitPickupCode(String(data || "")).then((ok) => {
+        if (ok) {
+          stopCameraStream()
+          navigate("pickupOpen")
+          return
+        }
+        validating = false
+        setCameraError(true)
+        updateScanNotice(scanNotice, "Invalid code. Try again.")
+      })
+      return false
+    })
+  }
+
+  startPickupScan()
 }
 
 function renderPickupCode() {
@@ -737,7 +782,14 @@ function renderPickupCode() {
       setStatus("Please enter a 5-digit code.")
       return
     }
-    navigate("pickupOpen")
+    setStatus("Validating code...")
+    submitPickupCode(input.value.trim()).then((ok) => {
+      if (ok) {
+        navigate("pickupOpen")
+        return
+      }
+      setStatus("Invalid code. Try again.")
+    })
   })
 
   const keypad = document.createElement("div")
