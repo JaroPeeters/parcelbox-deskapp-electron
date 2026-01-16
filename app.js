@@ -96,6 +96,39 @@ function renderHeaderActions(container) {
   container.appendChild(actions)
 }
 
+function createStepHeader(title, step, total) {
+  const header = document.createElement("div")
+  header.className = "step-header"
+
+  const homeButton = createButton("Home", () => navigate("home"), "btn btn--home")
+  header.appendChild(homeButton)
+
+  const textWrap = document.createElement("div")
+  textWrap.className = "step-header__text"
+
+  const titleEl = document.createElement("div")
+  titleEl.className = "step-header__title"
+  titleEl.textContent = title
+  textWrap.appendChild(titleEl)
+
+  if (total && total > 0) {
+    const progress = document.createElement("div")
+    progress.className = "step-header__progress"
+    for (let i = 1; i <= total; i += 1) {
+      const dot = document.createElement("span")
+      dot.className = "step-header__dot"
+      if (i <= step) {
+        dot.classList.add("is-active")
+      }
+      progress.appendChild(dot)
+    }
+    textWrap.appendChild(progress)
+  }
+
+  header.appendChild(textWrap)
+  return header
+}
+
 function renderHome() {
   setStatus("")
   const wrapper = document.createElement("div")
@@ -132,14 +165,18 @@ function normalizeResidentsFromApi(payload) {
     residents.push({
       id: resident.uuid,
       name: `${resident.firstName || ""} ${resident.lastName || ""}`.trim(),
-      apartment: apartmentNumber
+      apartment: apartmentNumber,
+      userUuid: resident.uuid,
+      userSelected: `${resident.firstName || ""} ${resident.lastName || ""}`.trim()
     })
     if (Array.isArray(resident.familyMembers)) {
       resident.familyMembers.forEach((member) => {
         residents.push({
           id: member.uuid,
           name: `${member.firstName || ""} ${member.lastName || ""}`.trim(),
-          apartment: apartmentNumber
+          apartment: apartmentNumber,
+          userUuid: resident.uuid,
+          userSelected: `${member.firstName || ""} ${member.lastName || ""}`.trim()
         })
       })
     }
@@ -152,6 +189,47 @@ function normalizeSizesFromApi(payload) {
   const order = ["small", "medium", "large", "extra_large", "extra_extra_large"]
   const allowed = new Set(payload.map((value) => String(value || "").toLowerCase()))
   return order.filter((size) => allowed.has(size))
+}
+
+async function submitDelivery() {
+  const config = getApiConfig()
+  if (!config) return true
+  if (!state.selectedResident || !state.selectedSize) {
+    setStatus("Missing delivery information.")
+    return false
+  }
+  if (!state.selectedResident.userUuid) {
+    setStatus("Unable to submit delivery for this resident.")
+    return false
+  }
+  if (!state.selectedSize.key) {
+    setStatus("Please select a valid size.")
+    return false
+  }
+
+  const payload = {
+    boxUuid: config.boxUuid,
+    userUuid: state.selectedResident.userUuid,
+    userSelected: state.selectedResident.userSelected || state.selectedResident.name,
+    unitSize: state.selectedSize.key,
+    message: state.deliveryNote || ""
+  }
+
+  try {
+    const url = `${config.apiBaseUrl}/api/v1/apartment/deliveries`
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    })
+    if (!response.ok) {
+      throw new Error(`Request failed (${response.status})`)
+    }
+    return true
+  } catch (error) {
+    setStatus("Unable to submit delivery. Try again.")
+    return false
+  }
 }
 
 async function ensureResidentsLoaded() {
@@ -232,12 +310,7 @@ function renderDelivery() {
   const section = document.createElement("section")
   section.className = "section"
 
-  const header = document.createElement("div")
-  header.className = "section__header"
-  const title = document.createElement("h2")
-  title.textContent = "Delivery"
-  header.appendChild(title)
-  renderHeaderActions(header)
+  const header = createStepHeader("Select resident", 1, 3)
 
   const search = document.createElement("input")
   search.type = "search"
@@ -251,7 +324,7 @@ function renderDelivery() {
   })
 
   const list = document.createElement("div")
-  list.className = "grid grid--2 list"
+  list.className = "grid grid--3 list"
 
   const residentsSource = state.residents || window.PARCELBOX_DATA.residents || []
   const filteredResidents = residentsSource
@@ -264,7 +337,7 @@ function renderDelivery() {
       )
     })
 
-  const pageSize = 8
+  const pageSize = 9
   const totalPages = Math.max(1, Math.ceil(filteredResidents.length / pageSize))
   const currentPage = Math.min(state.page, totalPages)
   const startIndex = (currentPage - 1) * pageSize
@@ -281,7 +354,14 @@ function renderDelivery() {
       </div>
       <div class="card__apartment">${resident.apartment}</div>
     `
-    card.addEventListener("click", () => navigate("deliverySize", { selectedResident: resident }))
+    card.addEventListener("click", () => {
+      const selectedResident = {
+        ...resident,
+        userUuid: resident.userUuid || resident.id || null,
+        userSelected: resident.userSelected || resident.name
+      }
+      navigate("deliverySize", { selectedResident })
+    })
     list.appendChild(card)
   })
 
@@ -370,22 +450,17 @@ function renderDeliverySize() {
   const section = document.createElement("section")
   section.className = "section"
 
-  const header = document.createElement("div")
-  header.className = "section__header"
-  const title = document.createElement("h2")
-  title.textContent = "Select package size"
-  header.appendChild(title)
-  renderHeaderActions(header)
+  const header = createStepHeader("Select package size", 2, 3)
 
   const grid = document.createElement("div")
   grid.className = "size-grid"
 
   const sizesMap = {
-    small: { label: "S", dims: "30 x 20 x 10 cm" },
-    medium: { label: "M", dims: "40 x 30 x 20 cm" },
-    large: { label: "L", dims: "50 x 40 x 30 cm" },
-    extra_large: { label: "XL", dims: "60 x 50 x 40 cm" },
-    extra_extra_large: { label: "XXL", dims: "74 x 45 x 42 cm" }
+    small: { key: "small", label: "S", dims: "30 x 20 x 10 cm" },
+    medium: { key: "medium", label: "M", dims: "40 x 30 x 20 cm" },
+    large: { key: "large", label: "L", dims: "50 x 40 x 30 cm" },
+    extra_large: { key: "extra_large", label: "XL", dims: "60 x 50 x 40 cm" },
+    extra_extra_large: { key: "extra_extra_large", label: "XXL", dims: "74 x 45 x 42 cm" }
   }
   const sizeOrder = ["small", "medium", "large", "extra_large", "extra_extra_large"]
   const available = state.availableSizes && state.availableSizes.length > 0
@@ -440,12 +515,7 @@ function renderDeliveryNote() {
   const section = document.createElement("section")
   section.className = "section"
 
-  const header = document.createElement("div")
-  header.className = "section__header"
-  const title = document.createElement("h2")
-  title.textContent = "Add a delivery note"
-  header.appendChild(title)
-  renderHeaderActions(header)
+  const header = createStepHeader("Add a delivery note", 3, 3)
 
   const form = document.createElement("form")
   form.className = "note-form"
@@ -463,12 +533,21 @@ function renderDeliveryNote() {
   const actions = document.createElement("div")
   actions.className = "note-actions"
 
+  const handleSubmit = async () => {
+    setStatus("Submitting delivery...")
+    const ok = await submitDelivery()
+    if (ok) {
+      navigate("deliveryOpen")
+    }
+  }
+
   const skip = createButton("Skip", () => {
-    navigate("deliveryOpen")
+    state.deliveryNote = ""
+    handleSubmit()
   }, "btn btn--ghost")
 
   const submit = createButton("", () => {
-    navigate("deliveryOpen")
+    handleSubmit()
   }, "note-submit")
   submit.setAttribute("aria-label", "Submit note")
 
@@ -477,7 +556,7 @@ function renderDeliveryNote() {
 
   form.addEventListener("submit", (event) => {
     event.preventDefault()
-    navigate("deliveryOpen")
+    handleSubmit()
   })
 
   form.appendChild(textarea)
@@ -496,6 +575,9 @@ function renderDeliveryOpen() {
 
   const section = document.createElement("section")
   section.className = "section status-screen"
+
+  const homeButton = createButton("Home", () => navigate("home"), "btn btn--home btn--home--floating")
+  section.appendChild(homeButton)
 
   const title = document.createElement("div")
   title.className = "status-screen__title"
@@ -523,6 +605,9 @@ function renderDeliverySuccess() {
 
   const section = document.createElement("section")
   section.className = "section status-screen"
+
+  const homeButton = createButton("Home", () => navigate("home"), "btn btn--home btn--home--floating")
+  section.appendChild(homeButton)
 
   const image = document.createElement("img")
   image.src = "assets/success.png"
@@ -556,12 +641,7 @@ function renderPickup() {
   const wrapper = document.createElement("section")
   wrapper.className = "section"
 
-  const header = document.createElement("div")
-  header.className = "section__header"
-  const title = document.createElement("h2")
-  title.textContent = "Pick-up"
-  header.appendChild(title)
-  renderHeaderActions(header)
+  const header = createStepHeader("Choose pick-up method", 1, 2)
 
   const grid = document.createElement("div")
   grid.className = "grid grid--2"
@@ -613,12 +693,7 @@ function renderPickupQr() {
   const section = document.createElement("section")
   section.className = "section"
 
-  const header = document.createElement("div")
-  header.className = "section__header"
-  const title = document.createElement("h2")
-  title.textContent = "Scan the QR code"
-  header.appendChild(title)
-  renderHeaderActions(header)
+  const header = createStepHeader("Scan the QR code", 2, 2)
 
   const camera = createCameraPanel()
   section.appendChild(header)
@@ -643,12 +718,7 @@ function renderPickupCode() {
   const section = document.createElement("section")
   section.className = "section"
 
-  const header = document.createElement("div")
-  header.className = "section__header"
-  const title = document.createElement("h2")
-  title.textContent = "Enter Code"
-  header.appendChild(title)
-  renderHeaderActions(header)
+  const header = createStepHeader("Enter access code", 2, 2)
 
   const form = document.createElement("form")
   form.className = "code-form"
@@ -720,12 +790,7 @@ function renderReservation() {
   const wrapper = document.createElement("section")
   wrapper.className = "section"
 
-  const header = document.createElement("div")
-  header.className = "section__header"
-  const title = document.createElement("h2")
-  title.textContent = "Reservation"
-  header.appendChild(title)
-  renderHeaderActions(header)
+  const header = createStepHeader("Choose reservation method", 1, 3)
 
   const grid = document.createElement("div")
   grid.className = "grid grid--2"
@@ -757,12 +822,7 @@ function renderReservationQr() {
   const section = document.createElement("section")
   section.className = "section"
 
-  const header = document.createElement("div")
-  header.className = "section__header"
-  const title = document.createElement("h2")
-  title.textContent = "Scan the QR code"
-  header.appendChild(title)
-  renderHeaderActions(header)
+  const header = createStepHeader("Scan the QR code", 2, 3)
 
   const camera = createCameraPanel()
   section.appendChild(header)
@@ -787,12 +847,7 @@ function renderReservationCode() {
   const section = document.createElement("section")
   section.className = "section"
 
-  const header = document.createElement("div")
-  header.className = "section__header"
-  const title = document.createElement("h2")
-  title.textContent = "Enter Code"
-  header.appendChild(title)
-  renderHeaderActions(header)
+  const header = createStepHeader("Enter reservation code", 2, 3)
 
   const form = document.createElement("form")
   form.className = "code-form"
@@ -865,22 +920,17 @@ function renderReservationSize() {
   const section = document.createElement("section")
   section.className = "section"
 
-  const header = document.createElement("div")
-  header.className = "section__header"
-  const title = document.createElement("h2")
-  title.textContent = "Select box size"
-  header.appendChild(title)
-  renderHeaderActions(header)
+  const header = createStepHeader("Select box size", 3, 3)
 
   const grid = document.createElement("div")
   grid.className = "size-grid"
 
   const sizesMap = {
-    small: { label: "S", dims: "30 x 20 x 10 cm" },
-    medium: { label: "M", dims: "40 x 30 x 20 cm" },
-    large: { label: "L", dims: "50 x 40 x 30 cm" },
-    extra_large: { label: "XL", dims: "60 x 50 x 40 cm" },
-    extra_extra_large: { label: "XXL", dims: "74 x 45 x 42 cm" }
+    small: { key: "small", label: "S", dims: "30 x 20 x 10 cm" },
+    medium: { key: "medium", label: "M", dims: "40 x 30 x 20 cm" },
+    large: { key: "large", label: "L", dims: "50 x 40 x 30 cm" },
+    extra_large: { key: "extra_large", label: "XL", dims: "60 x 50 x 40 cm" },
+    extra_extra_large: { key: "extra_extra_large", label: "XXL", dims: "74 x 45 x 42 cm" }
   }
   const sizeOrder = ["small", "medium", "large", "extra_large", "extra_extra_large"]
   const available = state.availableSizes && state.availableSizes.length > 0
@@ -936,6 +986,9 @@ function renderReservationOpen() {
   const section = document.createElement("section")
   section.className = "section status-screen"
 
+  const homeButton = createButton("Home", () => navigate("home"), "btn btn--home btn--home--floating")
+  section.appendChild(homeButton)
+
   const title = document.createElement("div")
   title.className = "status-screen__title"
   title.textContent = "Box 39"
@@ -963,6 +1016,9 @@ function renderPickupOpen() {
   const section = document.createElement("section")
   section.className = "section status-screen"
 
+  const homeButton = createButton("Home", () => navigate("home"), "btn btn--home btn--home--floating")
+  section.appendChild(homeButton)
+
   const title = document.createElement("div")
   title.className = "status-screen__title"
   title.textContent = "Box 39"
@@ -984,6 +1040,9 @@ function renderPickupOpen() {
 function renderPickupSuccess() {
   const section = document.createElement("section")
   section.className = "section status-screen"
+
+  const homeButton = createButton("Home", () => navigate("home"), "btn btn--home btn--home--floating")
+  section.appendChild(homeButton)
 
   const image = document.createElement("img")
   image.src = "assets/success.png"
